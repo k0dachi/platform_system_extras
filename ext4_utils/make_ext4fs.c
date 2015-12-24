@@ -115,6 +115,21 @@ static u32 build_default_directory_structure(const char *dir_path,
 	return root_inode;
 }
 
+struct pax_exception {
+	const char *path;
+	const char *flags;
+};
+
+static const struct pax_exception pax_exceptions[] = {
+	{"/system/bin/mediaserver", "em"},
+
+	// temporary exceptions that will be replaced by fine-grained exceptions again
+	{"/system/bin/app_process32", "pem"},
+	{"/system/bin/app_process64", "pem"},
+	{"/system/bin/dalvikvm32", "pem"},
+	{"/system/bin/dalvikvm64", "pem"},
+};
+
 #ifndef USE_MINGW
 /* Read a local directory and create the same tree in the generated filesystem.
    Calls itself recursively with each directory in the given directory.
@@ -132,7 +147,7 @@ static u32 build_directory_structure(const char *full_path, const char *dir_path
 	struct dirent **namelist = NULL;
 	struct stat stat;
 	int ret;
-	int i;
+	int i, j;
 	u32 inode;
 	u32 entry_inode;
 	u32 dirs = 0;
@@ -302,6 +317,14 @@ static u32 build_directory_structure(const char *full_path, const char *dir_path
 			dentries[i].mtime);
 		if (ret)
 			error("failed to set permissions on %s\n", dentries[i].path);
+
+		for (j = 0; j < sizeof(pax_exceptions) / sizeof(pax_exceptions[0]); j++) {
+			if (strcmp(dentries[i].path, pax_exceptions[j].path) == 0) {
+				if (inode_set_pax_flags(entry_inode, pax_exceptions[j].flags))
+					error("failed to set PaX flags on %s\n", dentries[i].path);
+				break;
+			}
+		}
 
 		/*
 		 * It's important to call inode_set_selinux() before
